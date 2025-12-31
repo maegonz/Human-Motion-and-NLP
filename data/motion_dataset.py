@@ -4,6 +4,7 @@ from glob import glob
 from typing import Union
 from pathlib import Path
 from torch.utils.data import Dataset
+from transformers import AutoTokenizer
 
 # directories containing text descriptions and motion files
 text_dir = './data/texts/'  # directory containing all .txt description files
@@ -16,7 +17,8 @@ all_motion = sorted(glob(os.path.join(motion_dir, '*.npy')))
 
 class MotionDataset(Dataset):
     def __init__(self,
-                 file: str = "train"):
+                 file: str = "train",
+                 tokenizer: str = 't5-small'):
         """
         Params
         -------
@@ -32,6 +34,7 @@ class MotionDataset(Dataset):
         # .../motions/
         self.text_dir = text_dir
         self.motion_dir = motion_dir
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=True)
 
         # get sorted list of all text files and motion files
         self.all_text = all_text
@@ -57,8 +60,19 @@ class MotionDataset(Dataset):
             descriptions = f.readlines()
             for desc in descriptions:
                 text.append(desc.split('#')[0].capitalize())
+        
+        # Tokenize the text descriptions
+        tokenized_texts = self.tokenizer(
+            text,
+            padding='max_length',
+            max_length=512,
+            truncation=True,
+            return_tensors='pt'
+        )
 
         return {
             "motion": motion,
-            "text": text
+            "text": text,
+            "input_ids": tokenized_texts.input_ids,
+            "attention_mask": tokenized_texts.attention_mask
         }
