@@ -55,24 +55,25 @@ class MotionDataset(Dataset):
         motion = np.load(self.motion_files[idx])
 
         # get the corresponding description for the associated motion
-        text = []
+        texts = []
         with open(self.text_files[idx]) as f:
             descriptions = f.readlines()
             for desc in descriptions:
-                text.append(desc.split('#')[0].capitalize())
+                texts.append(desc.split('#')[0].capitalize())
         
         # Tokenize the text descriptions
-        tokenized_texts = self.tokenizer(
+        tokenized_texts = [
+            self.tokenizer(
             text,
             padding='max_length',
             max_length=512,
             truncation=True,
             return_tensors='pt'
-        )
+        ) for text in texts]
 
         return {
             "motion": motion,
-            "text": text,
-            "input_ids": tokenized_texts["input_ids"],
-            "attention_mask": tokenized_texts["attention_mask"]
+            "text": texts,
+            "input_ids": [t["input_ids"] for t in tokenized_texts],
+            "attention_mask": [t["attention_mask"] for t in tokenized_texts]
         }
