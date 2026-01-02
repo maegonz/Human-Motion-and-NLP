@@ -75,6 +75,6 @@ class MotionDataset(Dataset):
         return {
             "motion": motion,
             "captions": text,
-            "input_ids": tokens["input_ids"],
-            "attention_mask": tokens["attention_mask"],
+            "input_ids": tokens["input_ids"],  # shape: (1, seq_len)
+            "attention_mask": tokens["attention_mask"],  # shape: (1, seq_len)
         }
