@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import random as rd
 from glob import glob
 from typing import Union
 from pathlib import Path
@@ -55,22 +56,25 @@ class MotionDataset(Dataset):
         return len(self.files_name)
     
     def __getitem__(self, idx):
+        print(idx)
         # read npy motion file
         motion = np.load(self.motion_files[idx])
 
         # get the corresponding description for the associated motion
-        texts = []
         with open(self.text_files[idx]) as f:
-            descriptions = f.readlines()
-            for desc in descriptions:
-                texts.append(desc.split('#')[0].capitalize())
+            descriptions = [
+                caption.split('#')[0].capitalize() for caption in f.readlines()
+            ]
         
-        # Tokenize the text descriptions
-        tokenized_texts = [self.tokenizer(text, padding='max_length', max_length=512, truncation=True, return_tensors='pt') for text in texts]
+        #TODO: deal with multiple captions
+        text = rd.choice(descriptions)
+
+        # Tokenize the text description
+        tokens = self.tokenizer(text, padding='max_length', max_length=512, truncation=True, return_tensors='pt')
 
         return {
             "motion": motion,
-            "captions": texts,
-            "input_ids": [t["input_ids"] for t in tokenized_texts],
-            "attention_mask": [t["attention_mask"] for t in tokenized_texts]
+            "captions": text,
+            "input_ids": tokens["input_ids"],
+            "attention_mask": tokens["attention_mask"],
         }
