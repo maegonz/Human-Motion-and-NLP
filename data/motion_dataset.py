@@ -18,7 +18,7 @@ all_motion = sorted(glob(os.path.join(motion_dir, '*.npy')))
 class MotionDataset(Dataset):
     def __init__(self,
                  file: str = "train",
-                 tokenizer: str = 't5-small'):
+                 tokenizer_name: str = 't5-small'):
         """
         Params
         -------
@@ -34,7 +34,7 @@ class MotionDataset(Dataset):
         # .../motions/
         self.text_dir = text_dir
         self.motion_dir = motion_dir
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
 
         # get sorted list of all text files and motion files
         self.all_text = all_text
@@ -46,7 +46,11 @@ class MotionDataset(Dataset):
 
         self.text_files = sorted([i for i in self.all_text if os.path.basename(i).split('.')[0] in self.files_name])
         self.motion_files = sorted([i for i in self.all_motion if os.path.basename(i).split('.')[0] in self.files_name])
-    
+        
+        self.motion_frames = [
+            np.load(m).shape[0] for m in self.motion_files
+        ]
+
     def __len__(self):
         return len(self.files_name)
     
@@ -62,18 +66,11 @@ class MotionDataset(Dataset):
                 texts.append(desc.split('#')[0].capitalize())
         
         # Tokenize the text descriptions
-        tokenized_texts = [
-            self.tokenizer(
-            text,
-            padding='max_length',
-            max_length=512,
-            truncation=True,
-            return_tensors='pt'
-        ) for text in texts]
+        tokenized_texts = [self.tokenizer(text, padding='max_length', max_length=512, truncation=True, return_tensors='pt') for text in texts]
 
         return {
             "motion": motion,
-            "text": texts,
+            "captions": texts,
             "input_ids": [t["input_ids"] for t in tokenized_texts],
             "attention_mask": [t["attention_mask"] for t in tokenized_texts]
         }
