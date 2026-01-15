@@ -45,6 +45,11 @@ class TransfoLM(nn.Module):
 
         # Decoder layers
         self.lm = T5ForConditionalGeneration.from_pretrained(lm_name)
+        # Freeze LM parameters
+        for param in self.lm.parameters():
+            param.requires_grad = False
+        self.lm.eval()
+        self.lm.config.use_cache = False  # Disable caching for training
 
         # Projection layer to map encoder output to LM model dimension
         self.projection = nn.Linear(model_dim, self.lm.config.d_model)
@@ -93,10 +98,11 @@ class TransfoLM(nn.Module):
         tgt_labels = tgt[:, 1:].contiguous()
 
         # Decoder forward pass using T5 LM
-        outputs = self.lm(encoder_outputs=encoder_output,
-                          attention_mask=encoder_attention_mask,
-                          decoder_input_ids=tgt_input_ids,
-                          labels=tgt_labels,
-                          return_dict=True)
+        with torch.no_grad():
+            outputs = self.lm(encoder_outputs=encoder_output,
+                            attention_mask=encoder_attention_mask,
+                            decoder_input_ids=tgt_input_ids,
+                            labels=tgt_labels,
+                            return_dict=True)
         
-        return outputs.logits
+        return outputs  #, outputs.logits, outputs.loss
