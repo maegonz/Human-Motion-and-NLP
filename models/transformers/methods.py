@@ -4,7 +4,6 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-# from metrics import score
 
 
 def training(model: nn.Module,
@@ -86,7 +85,7 @@ def training(model: nn.Module,
             loop.set_postfix(loss=loss.item())
 
             del outputs, loss, motion, captions_tokens
-        
+
         torch.cuda.empty_cache()
 
         epoch_loss = running_loss / len(train_loader.dataset)

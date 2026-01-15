@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
-from .blocks import MultiHeadAttention, FeedForward, PositionalEmbedding
+from .blocks import PositionalEmbedding
 from .encoders import Encoder
 
 class TransfoLM(nn.Module):
@@ -36,7 +36,7 @@ class TransfoLM(nn.Module):
         super(TransfoLM, self).__init__()
         # Embedding layers
         self.enc_embedding = nn.Linear(motion_dim, model_dim)
-        self.pos_embedding = PositionalEmbedding(model_dim, max_seq_len)
+        self.pos_embedding = PositionalEmbedding(model_dim)
         
         # Encoder layers
         self.encoder = nn.ModuleList(
