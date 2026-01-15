@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import T5ForConditionalGeneration
-from .blocks import MultiHeadAttention, FeedForward, PositionalEmbedding
+from .blocks import PositionalEmbedding
 from .encoders import Encoder
 from .decoders import Decoder
 
