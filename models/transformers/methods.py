@@ -4,7 +4,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-from metrics import score
+# from metrics import score
 
 
 def training(model: nn.Module,
@@ -54,64 +54,58 @@ def training(model: nn.Module,
     """
 
     model.to(device)
-    # scaler = GradScaler(enabled=(use_amp and device.type == "cuda"))
-    scaler = GradScaler(enabled=use_amp and device.type == "cuda")
+    use_amp = use_amp and device.type == "cuda"
+    scaler = GradScaler(enabled=use_amp)
 
-    train_losses, train_accuracies = [], []
-    val_losses, val_accuracies = [], []
+    train_losses = []
+    val_losses = []
 
     epoch_tqdm = tqdm(range(epochs), desc="Training Progress")
 
     for epoch in epoch_tqdm:
         model.train()
         running_loss = 0.0
-        bleu_score = 0
 
         loop = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
 
         for item in loop:
-            motion, captions_tokens = item['motion'].to(device), item['input_ids'][0].to(device)
-            optimizer.zero_grad()
+            motion = item['motion'].to(device, non_blocking=True)
+            captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device.type, enabled=use_amp):
-                decoder_input = captions_tokens[:, :-1]
-                labels = captions_tokens[:, 1:]
-
-                outputs = model(motion, decoder_input)
-                loss = criterion(outputs, labels)
+                outputs = model(motion, captions_tokens)
+                loss = outputs.loss
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
             running_loss += loss.item() * motion.size(0)
-            _, predicted = torch.max(outputs, 1)
-            bleu_score += score(captions_tokens, outputs)
-
+            # _, predicted = torch.max(outputs, 1)
             loop.set_postfix(loss=loss.item())
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-        epoch_acc = 100.0 * bleu_score / len(train_loader.dataset)
+            del outputs, loss, motion, captions_tokens
+        
+        torch.cuda.empty_cache()
 
+        epoch_loss = running_loss / len(train_loader.dataset)
         train_losses.append(epoch_loss)
-        train_accuracies.append(epoch_acc)
 
         if val_loader is not None:
-            val_loss, val_acc = evaluating(
+            val_loss, _ = evaluating(
                 model, val_loader, criterion, device, use_amp
             )
             val_losses.append(val_loss)
-            val_accuracies.append(val_acc)
 
             epoch_tqdm.set_postfix(
                 train_loss=epoch_loss,
                 val_loss=val_loss,
-                val_accuracy=val_acc,
             )
         else:
             epoch_tqdm.set_postfix(train_loss=epoch_loss)
 
-    return train_losses, train_accuracies, val_losses, val_accuracies
+    return train_losses, val_losses
 
         
 def evaluating(model: nn.Module, 
@@ -146,7 +140,6 @@ def evaluating(model: nn.Module,
 
     model.eval()
     total_loss = 0.0
-    correct = 0
 
     with torch.no_grad():
         for inputs, labels in data_loader:
@@ -157,10 +150,7 @@ def evaluating(model: nn.Module,
                 loss = criterion(outputs, labels)
 
             total_loss += loss.item() * inputs.size(0)
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == labels).sum().item()
 
     avg_loss = total_loss / len(data_loader.dataset)
-    avg_accuracy = 100.0 * correct / len(data_loader.dataset)
 
-    return avg_loss, avg_accuracy
+    return avg_loss
