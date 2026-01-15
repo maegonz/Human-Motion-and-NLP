@@ -48,7 +48,7 @@ class TransfoLM(nn.Module):
         # Freeze LM parameters
         for param in self.lm.parameters():
             param.requires_grad = False
-        self.lm.eval()
+        # self.lm.eval()
         self.lm.config.use_cache = False  # Disable caching for training
 
         # Projection layer to map encoder output to LM model dimension
@@ -98,11 +98,10 @@ class TransfoLM(nn.Module):
         tgt_labels = tgt[:, 1:].contiguous()
 
         # Decoder forward pass using T5 LM
-        with torch.no_grad():
-            outputs = self.lm(encoder_outputs=encoder_output,
-                            attention_mask=encoder_attention_mask,
-                            decoder_input_ids=tgt_input_ids,
-                            labels=tgt_labels,
-                            return_dict=True)
+        outputs = self.lm(encoder_outputs=encoder_output,
+                        attention_mask=encoder_attention_mask,
+                        decoder_input_ids=tgt_input_ids,
+                        labels=tgt_labels,
+                        return_dict=True)
         
         return outputs  #, outputs.logits, outputs.loss
