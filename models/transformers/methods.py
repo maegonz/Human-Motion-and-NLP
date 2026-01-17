@@ -70,10 +70,12 @@ def training(model: nn.Module,
         for item in loop:
             motion = item['motion'].to(device, non_blocking=True)
             captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
+            t5_attn_mask = item['t5_attn_mask'].squeeze(1).to(device, non_blocking=True)
+            encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device.type, enabled=use_amp):
-                outputs = model(motion, captions_tokens)
+                outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask)
                 loss = outputs.loss
 
             scaler.scale(loss).backward()

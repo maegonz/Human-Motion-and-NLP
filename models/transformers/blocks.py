@@ -30,7 +30,10 @@ class MultiHeadAttention(nn.Module):
         atten_scores = atten_scores / n
 
         if mask is not None:
-            atten_scores = atten_scores.masked_fill(mask == 0, -1e9)
+            _MASKING_VALUE = -1e+15 if atten_scores.dtype == torch.float32 else -1e+4
+            if len(mask.shape) == 2:
+                mask = mask.unsqueeze(1).unsqueeze(1)  # (batch_size, 1, 1, seq_len)
+            atten_scores = atten_scores.masked_fill(mask == 0, _MASKING_VALUE)
 
         # Attention probabilities
         atten_prob = nn.functional.softmax(atten_scores, dim=-1)
@@ -57,7 +60,7 @@ class MultiHeadAttention(nn.Module):
         # Apply linear layer
         Q = self.query(Q)
         K = self.key(K)
-        V = self.value(K)
+        V = self.value(V)
 
         Q = self.split_heads(Q)
         K = self.split_heads(K)
