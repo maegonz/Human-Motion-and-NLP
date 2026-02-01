@@ -4,6 +4,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
+from ..metrics import score
 
 
 def training(model: nn.Module,
@@ -86,7 +87,7 @@ def training(model: nn.Module,
             # _, predicted = torch.max(outputs, 1)
             loop.set_postfix(loss=loss.item())
 
-            del outputs, loss, motion, captions_tokens
+            del outputs, loss, motion, captions_tokens, t5_attn_mask, encoder_attn_mask
 
         torch.cuda.empty_cache()
 
@@ -94,8 +95,8 @@ def training(model: nn.Module,
         train_losses.append(epoch_loss)
 
         if val_loader is not None:
-            val_loss, _ = evaluating(
-                model, val_loader, criterion, device, use_amp
+            val_loss, _ = evaluation(
+                model, val_loader, device, use_amp
             )
             val_losses.append(val_loss)
 
@@ -109,9 +110,8 @@ def training(model: nn.Module,
     return train_losses, val_losses
 
         
-def evaluating(model: nn.Module, 
+def evaluation(model: nn.Module, 
                data_loader: DataLoader,
-               criterion: nn.Module,
                device: torch.device,
                use_amp: bool = True):
     """
@@ -140,18 +140,29 @@ def evaluating(model: nn.Module,
     """
 
     model.eval()
-    total_loss = 0.0
+    total_accuracy = 0.0
 
     with torch.no_grad():
-        for inputs, labels in data_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
+        for id, item in enumerate(data_loader):
+            motion = item['motion'].to(device, non_blocking=True)
+            captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
+            t5_attn_mask = item['t5_attn_mask'].squeeze(1).to(device, non_blocking=True)
+            encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
+            captions = item['captions']
 
             with autocast(device_type=device.type, enabled=use_amp):
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, generation=True)
 
-            total_loss += loss.item() * inputs.size(0)
+            for caption, output in zip(captions, outputs):
+                print(f"GT: {caption}")
+                print(f"Pred: {output}")
+                print("-----")
+                accuracy = score(caption, output)
+                print(f"Accuracy: {accuracy}\n")
+                total_accuracy += accuracy
 
-    avg_loss = total_loss / len(data_loader.dataset)
+            break  # Remove this break to evaluate on the entire dataset
 
-    return avg_loss
+    avg_accuracy = total_accuracy / len(data_loader.dataset)
+
+    return avg_accuracy

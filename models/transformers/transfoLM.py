@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import T5ForConditionalGeneration
+from transformers import AutoTokenizer, T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
 from .blocks import PositionalEmbedding
 from .encoders import Encoder
@@ -34,6 +34,8 @@ class TransfoLM(nn.Module):
             Dropout rate for regularization. Defaults to 0.2.
         """
         super(TransfoLM, self).__init__()
+        self.max_seq_len = max_seq_len
+
         # Embedding layers
         self.enc_embedding = nn.Linear(motion_dim, model_dim)
         self.pos_embedding = PositionalEmbedding(model_dim)
@@ -42,6 +44,9 @@ class TransfoLM(nn.Module):
         self.encoder = nn.ModuleList(
             [Encoder(model_dim, num_heads, dropout, ff_dim) for _ in range(num_layers)]
         )
+
+        # Tokenizer for sentence generation
+        self.tokenizer = AutoTokenizer.from_pretrained(lm_name, use_fast=True)
 
         # Decoder layers
         self.lm = T5ForConditionalGeneration.from_pretrained(lm_name)
@@ -58,7 +63,7 @@ class TransfoLM(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     
-    def forward(self, src, tgt, encoder_attn_mask=None, t5_attn_mask=None):
+    def forward(self, src, tgt, encoder_attn_mask=None, t5_attn_mask=None, generation=False):
         """
         Params
         -------
@@ -66,8 +71,12 @@ class TransfoLM(nn.Module):
             input to the encoder, which is the motion
         tgt: torch.Tensor
             input to the decoder, which is the text
-        mask: torch.Tensor, optional
+        encoder_attn_mask: torch.Tensor, optional
             attention mask for the encoder, by default None
+        t5_attn_mask: torch.Tensor, optional
+            attention mask for the T5 decoder, by default None
+        generation: bool, optional
+            whether generate sentences or not, by default False
 
         Returns
         -------
@@ -99,12 +108,28 @@ class TransfoLM(nn.Module):
         if t5_attn_mask is not None:
             decoder_attn_mask = t5_attn_mask[:, :-1].contiguous()
 
-        # Decoder forward pass using T5 LM
-        outputs = self.lm(encoder_outputs=encoder_output,
-                        attention_mask=encoder_attn_mask,
-                        decoder_input_ids=tgt_input_ids,
-                        decoder_attention_mask=decoder_attn_mask,
-                        labels=tgt_labels,
-                        return_dict=True)
+        if generation:
+            # Generation mode
+            outputs_ids = self.lm.generate(
+                encoder_outputs=encoder_output,
+                max_length=50,
+                num_beams=4,
+                early_stopping=True,
+                output_scores=True,
+                no_repeat_ngram_size=2,   # Prevents any 2-word phrase from appearing twice
+                repetition_penalty=2.0,   # Penalizes words that have already been generated
+                length_penalty=1.0)        # encourages the model to generate meaningful length
+                        
+            outputs = self.tokenizer.batch_decode(outputs_ids, skip_special_tokens=True) 
+            return outputs
         
-        return outputs  #, outputs.logits, outputs.loss
+        else:
+            # Decoder forward pass using T5 LM
+            outputs = self.lm(encoder_outputs=encoder_output,
+                            attention_mask=encoder_attn_mask,
+                            decoder_input_ids=tgt_input_ids,
+                            decoder_attention_mask=decoder_attn_mask,
+                            labels=tgt_labels,
+                            return_dict=True)
+        
+        return outputs  # outputs.logits, outputs.loss

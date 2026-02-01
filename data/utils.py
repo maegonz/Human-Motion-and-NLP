@@ -30,6 +30,9 @@ def collate_fn_motion(batch):
         padded[i, :length] = motion
         attn_mask[i, :length] = 1   
 
+    # Concatenate captions texts
+    caption_texts = [item['captions'] for item in batch]
+
     # Concatenate captions tokens
     caption_tokens = torch.stack(
         [item['input_ids'].squeeze(0) for item in batch], dim=0
@@ -44,5 +47,6 @@ def collate_fn_motion(batch):
         "motion": padded,
         "attn_mask": attn_mask,
         "input_ids": caption_tokens,
-        "t5_attn_mask": t5_attn_mask
+        "t5_attn_mask": t5_attn_mask,
+        "captions": caption_texts
     }
