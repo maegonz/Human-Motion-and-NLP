@@ -48,18 +48,28 @@ class MotionDataset(Dataset):
 
         self.text_files = sorted([i for i in self.all_text if os.path.basename(i).split('.')[0] in self.files_name])
         self.motion_files = sorted([i for i in self.all_motion if os.path.basename(i).split('.')[0] in self.files_name])
-        
-        self.motion_frames = [
-            np.load(m).shape[0] for m in self.motion_files
-        ]
+        self.motion_frames = []
+
+        # statistics for normalization
+        sum_, sum_sq, count = 0, 0, 0
+        for m in self.motion_files:
+            motion = np.load(m)  # [T, J, 3]
+            self.motion_frames.append(motion.shape[0])
+            sum_ += motion.sum(axis=0)        # [J, 3]
+            sum_sq += (motion ** 2).sum(axis=0) # [J, 3]
+            count += motion.shape[0]            # T
+
+        self.mean = sum_ / count
+        self.std = np.sqrt(sum_sq / count - (self.mean ** 2))
 
     def __len__(self):
         return len(self.files_name)
     
     def __getitem__(self, idx):
         # read npy motion file
-        motion = np.load(self.motion_files[idx])
-
+        motion = np.load(self.motion_files[idx])  # [T, J, 3]
+        motion = (motion - self.mean) / (self.std + 1e-8)  # normalize the motion data
+    
         if self.file != "test":
             # get the corresponding description for the associated motion
             with open(self.text_files[idx]) as f:
