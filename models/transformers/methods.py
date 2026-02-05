@@ -140,7 +140,7 @@ def evaluation(model: nn.Module,
     """
 
     model.eval()
-    total_accuracy = 0.0
+    total_accuracy = []
 
     with torch.no_grad():
         for id, item in enumerate(data_loader):
@@ -159,10 +159,6 @@ def evaluation(model: nn.Module,
                 print("-----")
                 accuracy = score(caption, output)
                 print(f"Accuracy: {accuracy}\n")
-                total_accuracy += accuracy
+                total_accuracy.append(accuracy)
 
-            break  # Remove this break to evaluate on the entire dataset
-
-    avg_accuracy = total_accuracy / len(data_loader.dataset)
-
-    return avg_accuracy
+    return total_accuracy
