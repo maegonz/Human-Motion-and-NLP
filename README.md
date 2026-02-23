@@ -12,7 +12,7 @@ This project explores the intersection of **Natural Language Processing** and **
 This project is based on a courses conducted by `Hazem Wannous` professor at IMT Nord Europe.
 The project uses the HumanML3D dataset containing 3D human motion sequences paired with rich textual descriptions. This enables models to learn mappings between **language** and **motion**. 
 
-![](animation.gif)
+![](/src/animation.gif)
 
 
 ## Roadmap
