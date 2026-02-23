@@ -140,7 +140,7 @@ def evaluation(model: nn.Module,
     """
 
     model.eval()
-    metrics_scores = []
+    metrics_scores = {'bleu': [], 'meteor': [], 'rouge1': [], 'rouge2': [], 'rougeL': [], 'cider': []}
 
     with torch.no_grad():
         for id, item in enumerate(data_loader):
@@ -153,12 +153,20 @@ def evaluation(model: nn.Module,
             with autocast(device_type=device.type, enabled=use_amp):
                 outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, generation=True)
 
+            batch_metrics = {k: [] for k in metrics_scores.keys()}
+
             for caption, output in zip(captions, outputs):
-                print(f"GT: {caption}")
-                print(f"Pred: {output}")
-                print("-----")
+                output = output.split("describe the motion in English: ")[-1].strip()
                 metrics = scores(caption, output)
-                print(f"Metrics: {metrics}\n")
-                metrics_scores.append(metrics)
+                for key in metrics_scores.keys():
+                    batch_metrics[key].append(metrics[key])
+
+            for key in metrics_scores.keys():
+                if batch_metrics[key]:  # Check if the list is not empty
+                    batch_mean = sum(batch_metrics[key]) / len(batch_metrics[key])
+                else:
+                    batch_mean = 0.0  # or some default value if there are no metrics
+                
+                metrics_scores[key].append(batch_mean)
 
     return metrics_scores
