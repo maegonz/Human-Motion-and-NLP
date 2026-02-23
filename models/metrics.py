@@ -1,3 +1,5 @@
+import torch
+import torch.nn.functional as F
 import nltk
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from pycocoevalcap.cider.cider import Cider
@@ -62,3 +64,23 @@ def scores(reference: str, generated: str):
     scores.update(rouge(reference, generated))
     scores['cider'] = cider(reference, generated)
     return scores
+
+def contrastive_loss(motion_features, text_features, temperature=0.07):
+    """
+    motion_features: [batch, dim] (Mean-pooled output of MotionAdapter)
+    text_features: [batch, dim] (Mean-pooled hidden states of T5 embeddings)
+    """
+    # Normalize to get cosine similarity
+    motion_features = F.normalize(motion_features, dim=-1)
+    text_features = F.normalize(text_features, dim=-1)
+    
+    # Calculate logits (batch_size, batch_size)
+    logits = torch.matmul(motion_features, text_features.T) / temperature
+    
+    # Labels are diagonal (each motion matches its own text)
+    labels = torch.arange(motion_features.size(0)).to(motion_features.device)
+    
+    loss_m = F.cross_entropy(logits, labels)
+    loss_t = F.cross_entropy(logits.T, labels)
+    
+    return (loss_m + loss_t) / 2

@@ -137,5 +137,12 @@ class TransfoLM(nn.Module):
                             decoder_attention_mask=decoder_attn_mask,
                             labels=tgt_labels,
                             return_dict=True)
+
+        motion_embeddings = encoder_output.last_hidden_state.mean(dim=1)  # (B, model_dim)
+        text_embeddings = self.lm.get_input_embeddings()(tgt_input_ids).mean(dim=1)  # (B, model_dim)
         
-        return outputs  # outputs.logits, outputs.loss
+        return {"outputs": outputs,
+                "motion_embeddings": motion_embeddings,
+                "text_embeddings": text_embeddings,
+                "loss": outputs.loss,
+                "logits": outputs.logits}

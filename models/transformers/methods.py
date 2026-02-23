@@ -4,7 +4,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-from ..metrics import scores
+from ..metrics import scores, contrastive_loss
 
 
 def training(model: nn.Module,
@@ -14,6 +14,7 @@ def training(model: nn.Module,
             device: torch.device,
             epochs: int,
             val_loader: DataLoader=None,
+            alpha: float=0.1,
             use_amp: bool=True):
     """
     Train a PyTorch model with optional Automatic Mixed Precision.
@@ -35,6 +36,8 @@ def training(model: nn.Module,
     val_loader : DataLoader, optional
         DataLoader providing the validation dataset.
         If None, no validation is performed. Default is None.
+    alpha : float, optional
+        Weighting factor for the contrastive loss. Default is 0.1.
     use_amp : bool, optional
         Whether to use AMP.
         AMP is enabled only when using a CUDA device. Default is True.
@@ -77,7 +80,26 @@ def training(model: nn.Module,
 
             with autocast(device_type=device.type, enabled=use_amp):
                 outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask)
-                loss = outputs.loss
+
+                # logits = outputs["logits"] # (batch_size, seq_len, vocab_size)
+                # print("logits.shape:", logits.shape)
+                # logits = logits.view(-1, logits.size(-1))  # (batch * seq_len, vocab_size)
+                # print("logits reshaped to:", logits.shape)
+                # # Ensure labels are the ground truth shifted correctly
+                # labels = captions_tokens.clone()
+                # print("labels.shape before shift:", labels.shape)
+                # labels[labels == model.tokenizer.pad_token_id] = -100 
+                # labels = labels.view(-1) # (batch * seq_len)
+                # print("labels reshaped to:", labels.shape)
+                # ce_loss = criterion(logits, labels)
+
+                motion_features, text_features = outputs["motion_embeddings"], outputs["text_embeddings"]
+                
+                ce_loss = outputs["loss"]
+                cl_loss = contrastive_loss(motion_features, text_features)
+
+                # Combine them (lambda is a hyperparameter, start with 0.1)
+                loss = ce_loss + (alpha * cl_loss)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -87,7 +109,7 @@ def training(model: nn.Module,
             # _, predicted = torch.max(outputs, 1)
             loop.set_postfix(loss=loss.item())
 
-            del outputs, loss, motion, captions_tokens, t5_attn_mask, encoder_attn_mask
+            del outputs, loss, motion, captions_tokens, t5_attn_mask, encoder_attn_mask, motion_features, text_features
 
         torch.cuda.empty_cache()
 
