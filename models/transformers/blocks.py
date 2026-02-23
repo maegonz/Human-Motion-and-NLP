@@ -143,6 +143,10 @@ class MotionAdapter(nn.Module):
             nn.ReLU(),
             nn.Linear(lm_model_dim, lm_model_dim)
         )
+
+        self.layer_norm = nn.LayerNorm(lm_model_dim)
         
     def forward(self, x):
-        return self.adapter(x)
+        x = self.adapter(x)
+        x = self.layer_norm(x)
+        return x
