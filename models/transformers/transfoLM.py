@@ -63,6 +63,8 @@ class TransfoLM(nn.Module):
         # Dropout layer
         self.dropout = nn.Dropout(dropout)
 
+        self.prefix_text = "describe the motion in English: "
+        self.prefix_ids = self.tokenizer(self.prefix_text, add_special_tokens=False, return_tensors="pt").input_ids
     
     def forward(self, src, tgt, encoder_attn_mask=None, t5_attn_mask=None, generation=False):
         """
@@ -102,6 +104,25 @@ class TransfoLM(nn.Module):
         # Wrap for T5 compatibility
         encoder_output = BaseModelOutput(last_hidden_state=encoder_output)
         
+        prefix_ids = self.prefix_ids.to(src.device).expand(B, -1)  # (B, prefix_len)
+
+        if generation:
+            # Generation mode
+            outputs_ids = self.lm.generate(
+                encoder_outputs=encoder_output,
+                decoder_start_token_id=self.tokenizer.pad_token_id,  # Start generation with the pad token
+                decoder_input_ids=prefix_ids,  # Start generation with the prefix
+                max_length=40,  # Maximum length of the generated sequence
+                num_beams=4,
+                early_stopping=True,
+                output_scores=True,
+                no_repeat_ngram_size=2,   # Prevents any 2-word phrase from appearing twice
+                repetition_penalty=2.0,   # Penalizes words that have already been generated
+                length_penalty=1.0)       # encourages the model to generate meaningful length
+                        
+            outputs = self.tokenizer.batch_decode(outputs_ids, skip_special_tokens=True) 
+            return outputs
+        
         # Teacher forcing during training
         tgt = tgt.long()
         tgt_input_ids = tgt[:, :-1].contiguous()
@@ -109,24 +130,8 @@ class TransfoLM(nn.Module):
         if t5_attn_mask is not None:
             decoder_attn_mask = t5_attn_mask[:, :-1].contiguous()
 
-        if generation:
-            # Generation mode
-            outputs_ids = self.lm.generate(
-                encoder_outputs=encoder_output,
-                max_length=20,
-                num_beams=4,
-                early_stopping=True,
-                output_scores=True,
-                no_repeat_ngram_size=2,   # Prevents any 2-word phrase from appearing twice
-                repetition_penalty=2.0,   # Penalizes words that have already been generated
-                length_penalty=1.0)        # encourages the model to generate meaningful length
-                        
-            outputs = self.tokenizer.batch_decode(outputs_ids, skip_special_tokens=True) 
-            return outputs
-        
-        else:
-            # Decoder forward pass using T5 LM
-            outputs = self.lm(encoder_outputs=encoder_output,
+        # Decoder forward pass using T5 LM
+        outputs = self.lm(encoder_outputs=encoder_output,
                             attention_mask=encoder_attn_mask,
                             decoder_input_ids=tgt_input_ids,
                             decoder_attention_mask=decoder_attn_mask,
