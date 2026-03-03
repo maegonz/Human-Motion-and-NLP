@@ -137,10 +137,11 @@ class MotionAdapter(nn.Module):
         super().__init__()
         self.adapter = nn.Sequential(
             nn.Linear(model_dim, lm_model_dim),
-            nn.ReLU(),
+            nn.GELU(),  # Smoother than ReLu
             nn.Dropout(dropout),
             nn.Linear(lm_model_dim, lm_model_dim),
-            nn.ReLU(),
+            nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(lm_model_dim, lm_model_dim)
         )
 
