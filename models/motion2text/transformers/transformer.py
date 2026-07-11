@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .blocks import PositionalEmbedding
+from .blocks import PositionalEmbedding, MLP
 from .encoders import Encoder
 from .decoders import Decoder
 
@@ -36,7 +36,8 @@ class Transformer(nn.Module):
         """
         super(Transformer, self).__init__()
         # Embedding layers
-        self.enc_embedding = nn.Linear(motion_dim, model_dim)
+        # TODO: Consider using a more complex embedding strategy for motion data, such as a small CNN or MLP, instead of a simple linear layer.
+        self.enc_embedding = MLP(motion_dim, model_dim)
         self.deco_embedding = nn.Embedding(tgt_vocab_size, model_dim)
         self.pos_embedding = PositionalEmbedding(model_dim, max_seq_len)
         
@@ -51,7 +52,7 @@ class Transformer(nn.Module):
         )
 
         # Projection layer to map decoder output to target vocabulary size
-        self.fc = nn.Linear(model_dim, tgt_vocab_size)
+        self.projection = MLP(model_dim, tgt_vocab_size)
         self.dropout = nn.Dropout(dropout)
 
     def generate_mask(self, src, tgt):
@@ -122,6 +123,6 @@ class Transformer(nn.Module):
             decoder_output = decoder(decoder_output, encoder_output, src_mask, tgt_mask)
 
         # Final linear layer
-        description_output = self.fc(decoder_output)
+        description_output = self.projection(decoder_output)
 
         return description_output

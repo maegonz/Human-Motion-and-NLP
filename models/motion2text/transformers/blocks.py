@@ -132,15 +132,15 @@ class FeedForward(nn.Module):
         return feed_fwrd
     
 
-class MotionAdapter(nn.Module):
-    def __init__(self, model_dim=512, lm_model_dim=512, dropout=0.1):
+class MLP(nn.Module):
+    def __init__(self, model_dim=512, lm_model_dim=512, dropout=0.1, act_fn: nn.Module = nn.GELU):
         super().__init__()
         self.adapter = nn.Sequential(
             nn.Linear(model_dim, lm_model_dim),
-            nn.GELU(),  # Smoother than ReLu
+            act_fn(),  # Smoother than ReLu
             nn.Dropout(dropout),
             nn.Linear(lm_model_dim, lm_model_dim),
-            nn.GELU(),
+            act_fn(),
             nn.Dropout(dropout),
             nn.Linear(lm_model_dim, lm_model_dim)
         )
@@ -150,4 +150,115 @@ class MotionAdapter(nn.Module):
     def forward(self, x):
         x = self.adapter(x)
         x = self.layer_norm(x)
-        return x
+        return x    
+
+import torch
+import torch.nn as nn
+from transformers import AutoTokenizer
+
+class TextTokenizer(nn.Module):
+    def __init__(self, lm_name: str = 't5-small'):
+        """
+        Tokenizer for the language model.
+
+        Parameters
+        ----------
+        lm_name : str
+            Name of the pre-trained language model to use for tokenization.
+            Default is 't5-small'.
+        """
+        super(TextTokenizer, self).__init__()
+        self.tokenizer = AutoTokenizer.from_pretrained(lm_name, use_fast=True)
+        self.pad_token_id = self.tokenizer.pad_token_id
+
+    def forward(self, text: list[str]):
+        """
+        Tokenize a list of text strings.
+
+        Parameters
+        ----------
+        text : list[str]
+            List of text strings to tokenize.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the tokenized input IDs and attention masks.
+        """
+        return self.tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+    
+
+import torch.nn.functional as F
+
+# class ResidualBlock(nn.Module):
+#     def __init__(self, 
+#                  in_channels: int=1, 
+#                  out_channels: int=16, 
+#                  kernel_size: int=3, 
+#                  dilation: int=2):
+#         super().__init__()
+#         self.kernel_size = kernel_size
+#         self.dilation = dilation
+#         self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, dilation=dilation)
+#         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, dilation=dilation)
+#         self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
+
+#     def forward(self, x):
+#         # Compute left padding so conv remains causal (no lookahead)
+#         pad = (self.kernel_size - 1) * self.dilation
+
+#         # First causal convolution (pad only on left)
+#         out = F.pad(x, (pad, 0))
+#         out = F.relu(self.conv1(out))
+
+#         # Second causal convolution
+#         out = F.pad(out, (pad, 0))
+#         out = self.conv2(out)
+
+#         # Add residual (identity) connection
+#         res = x if self.downsample is None else self.downsample(x)
+#         return F.relu(out + res)
+
+# class STCN(nn.Module):
+#     def __init__(self, 
+#                  num_inputs: int=1, 
+#                  num_channels: list=[16, 16], 
+#                  output_dim: int=512, 
+#                  kernel_size: int=2):
+#         """
+#         Spatial-Temporal Convolutional Network for human motion sequence embedding.
+#         It contains a stack of residual blocks with exponentially increasing dilations,
+#         followed by a linear layer to produce the final output.
+
+#         Parameters
+#         ----------
+#         num_inputs: int
+#             Number of input channels (e.g., number of joints in motion data).
+#         num_channels: list[int]
+#             list of output channels for each TCN layer/block.
+#         output_dim: int
+#             Dimensionality of the output features.
+#         kernel_size: int
+#             Filter width of each 1D conv.
+#         """
+#         super().__init__()
+#         layers = []
+#         in_ch = num_inputs
+#         # Create a stack of ResidualBlocks with dilations 1, 2, 4...
+#         for i, ch in enumerate(num_channels):
+#             dilation = 2 ** i      # exponentially increasing dilations
+#             layers.append(ResidualBlock(in_ch, ch, kernel_size, dilation))
+#             in_ch = ch
+#         self.tcn = nn.Sequential(*layers)
+
+#         # Final linear layer to produce a single output value
+#         self.linear = nn.Linear(num_channels[-1], output_dim)
+
+#     def forward(self, x):
+#         """
+#         x has shape (batch_size, seq_len, n_joints, 3).
+#         """
+#         out = self.tcn(x)            # (batch, channels, seq_len)
+#         out = out[:, :, -1]          # take the last time step's features
+#         out = self.linear(out)       # (batch, output_dim)
+#         return out.squeeze(-1)       # return shape (batch, output_dim) 

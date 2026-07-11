@@ -1,10 +1,30 @@
 import numpy as np
+import random
+import torch
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation, PillowWriter
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from os.path import join as pjoin
+
+
+def set_seed(seed: int):
+    """
+    Set the random seed for reproducibility.
+
+    Parameters
+    ----------
+    seed : int
+        The seed value to set for random number generation.
+    """
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
 
 # Define the kinematic tree for connecting joints
 kinematic_tree = [
