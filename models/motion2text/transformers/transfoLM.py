@@ -115,8 +115,8 @@ class TransfoLM(nn.Module):
                 repetition_penalty=2.0,  
                 length_penalty=1.0
             )             
-            outputs = self.tokenizer.batch_decode(outputs_ids, skip_special_tokens=True) 
-            return outputs
+            # outputs = self.tokenizer.batch_decode(outputs_ids, skip_special_tokens=True) 
+            return outputs_ids
         
 
         tgt = tgt.long()

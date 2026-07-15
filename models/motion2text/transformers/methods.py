@@ -5,11 +5,11 @@ from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 from ...metrics import contrastive_loss
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 def training(model: nn.Module,
             train_loader: DataLoader,
-            criterion: nn.Module,
             optimizer: Optimizer,
             device: torch.device,
             epochs: int,
@@ -68,36 +68,35 @@ def training(model: nn.Module,
 
     for epoch in epoch_tqdm:
         model.train()
-        running_loss = 0.0
+        running_loss = torch.tensor(0.0, device=device)
 
-        loop = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
+        for k, item in enumerate(train_loader):
 
-        for item in loop:
             motion = item['motion'].to(device, non_blocking=True)
             captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
             t5_attn_mask = item['t5_attn_mask'].squeeze(1).to(device, non_blocking=True)
             encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
-            optimizer.zero_grad(set_to_none=True)
 
             with autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
                 outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, prefix_ids=prefix_ids)
-                motion_features, text_features = outputs["motion_embeddings"], outputs["text_embeddings"]
 
-                ce_loss = outputs["loss"]
+                motion_features, text_features = outputs["motion_embeddings"].to(device, non_blocking=True), outputs["text_embeddings"].to(device, non_blocking=True)
+
+                ce_loss = outputs["loss"].to(device, non_blocking=True)
                 cl_loss = contrastive_loss(motion_features, text_features)
 
                 # Combine them (lambda is a hyperparameter, start with 0.1)
                 loss = ce_loss + (alpha * cl_loss)
 
+            optimizer.zero_grad(set_to_none=True)
+
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
-            running_loss += loss.item() * motion.size(0)
+            running_loss += loss.detach() * motion.size(0)
 
-            loop.set_postfix(loss=loss.item(), ce_loss=ce_loss.item(), cl_loss=cl_loss.item())
-
-        epoch_loss = running_loss / len(train_loader.dataset)
+        epoch_loss = running_loss.item() / len(train_loader.dataset)
         train_losses.append(epoch_loss)
 
         if val_loader is not None:
@@ -116,10 +115,13 @@ def training(model: nn.Module,
 
 
 from ...metrics import Evaluator
+from .blocks import TextTokenizer
 
 def validation(model: nn.Module, 
                val_loader: DataLoader,
                device: torch.device,
+               tokenizer: TextTokenizer,
+               prefix_ids: torch.Tensor,
                use_amp: bool = True):
     """
     Evaluate a PyTorch model on a dataset with optional AMP.
@@ -130,10 +132,10 @@ def validation(model: nn.Module,
         The trained model to be evaluated.
     val_loader : DataLoader
         DataLoader providing the validation dataset.
-    criterion : nn.Module
-        Loss function used to compute validation loss.
     device : torch.device
         Device on which validation is performed ('cpu' or 'cuda').
+    tokenizer : TextTokenizer
+        Tokenizer for processing text data.
     use_amp : bool, optional
         Whether to use Automatic Mixed Precision (AMP).
         AMP is enabled only when using a CUDA device. Default is True.
@@ -145,6 +147,9 @@ def validation(model: nn.Module,
     avg_accuracy : float
         Average accuracy (percentage) over the entire dataset.
     """
+
+    tokenizer.to(device)
+    model.to(device)
 
     model.eval()
     evaluator = Evaluator()
@@ -160,8 +165,9 @@ def validation(model: nn.Module,
             encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
             captions = item['captions']
 
-            with autocast(device_type=device.type, enabled=use_amp):
-                outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, generation=True)
+            with autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
+                outputs_ids = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, generation=True, prefix_ids=prefix_ids)
+                outputs = tokenizer.batch_decode(outputs_ids, skip_special_tokens=True)
 
             all_references.extend(captions)
             all_generated.extend(outputs)
