@@ -124,3 +124,41 @@ def plot_3d_motion(save_path, joints, title, figsize=(10, 10), fps=120, radius=4
     plt.close()
 
     print(f'Animation saved to {save_path}!')
+
+
+def plot_metrics(val_metrics, save_path, show_plot=True):
+    """
+    Plot the validation metrics over epochs and save the plot.
+
+    Parameters
+    ----------
+    val_metrics : list of dict
+        A list containing dictionaries of validation metrics for each epoch.
+    save_path : str
+        The path where the plot will be saved.
+    """
+    list_bleu = [score['BLEU'] for score in val_metrics]
+    list_cider = [score['CIDEr'] for score in val_metrics]
+    list_meteor = [score['METEOR'] for score in val_metrics]
+    list_rouge1 = [score['ROUGE-1'] for score in val_metrics]
+    list_rouge2 = [score['ROUGE-2'] for score in val_metrics]
+    list_rougeL = [score['ROUGE-L'] for score in val_metrics]
+
+    plt.plot(list_bleu, label='BLEU')
+    plt.plot(list_cider, label='CIDEr')
+    plt.plot(list_meteor, label='METEOR')
+    plt.plot(list_rouge1, label='ROUGE-1')
+    plt.plot(list_rouge2, label='ROUGE-2')
+    plt.plot(list_rougeL, label='ROUGE-L')
+
+    # Add title and labels
+    plt.title('Validation Metrics Over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Metric Value')
+    plt.legend()
+    
+    # Save the plot to the specified path
+    plt.savefig(save_path)
+    if show_plot:
+        plt.show()
+    plt.close()
