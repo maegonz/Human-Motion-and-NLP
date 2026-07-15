@@ -187,6 +187,24 @@ class TextTokenizer(nn.Module):
         """
         return self.tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
     
+    def batch_decode(self, token_ids: torch.Tensor, skip_special_tokens: bool = True):
+        """
+        Decode a batch of token IDs back into text strings.
+
+        Parameters
+        ----------
+        token_ids : torch.Tensor
+            Tensor containing the token IDs to decode.
+        skip_special_tokens : bool, optional
+            Whether to skip special tokens during decoding. Default is True.
+
+        Returns
+        -------
+        list[str]
+            A list of decoded text strings.
+        """
+        return self.tokenizer.batch_decode(token_ids, skip_special_tokens=skip_special_tokens)
+    
 
 import torch.nn.functional as F
 
