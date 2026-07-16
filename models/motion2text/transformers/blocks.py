@@ -3,6 +3,60 @@ import torch
 import torch.nn as nn
 import math
 
+class FastMultiHeadAttention(nn.Module):
+    def __init__(self, model_dim: int = 256, num_heads: int = 4):
+        super(FastMultiHeadAttention, self).__init__()
+        assert model_dim % num_heads == 0, "Model's dimension must be divisible by num_heads"
+
+        self.model_dim = model_dim
+        self.num_heads = num_heads
+        self.head_dim = model_dim // num_heads
+
+        self.qkv_projection = nn.Linear(model_dim, model_dim * 3)
+        self.output = nn.Linear(model_dim, model_dim)
+
+    def forward(self, Q, K, V, mask=None):
+        batch_size, seq_len, _ = Q.size()
+
+        # if Q, K, V from Self-Attention
+        if Q is K and K is V:
+            # [B, S, D] -> [B, S, 3 * D]
+            qkv = self.qkv_projection(Q)
+            
+            # Form back heads [B, S, 3, H, D_head]
+            qkv = qkv.view(batch_size, seq_len, 3, self.num_heads, self.head_dim)
+            
+            # [3, B, H, S, D_head]
+            qkv = qkv.permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2]
+        else:
+            # if Q, K, V from Cross-Attention (Q different from K, V)
+            q = F.linear(Q, self.qkv_projection.weight[:self.model_dim], self.qkv_projection.bias[:self.model_dim])
+            k = F.linear(K, self.qkv_projection.weight[self.model_dim:self.model_dim*2], self.qkv_projection.bias[self.model_dim:self.model_dim*2])
+            v = F.linear(V, self.qkv_projection.weight[self.model_dim*2:], self.qkv_projection.bias[self.model_dim*2:])
+            
+            q = q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            k = k.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            v = v.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+
+        # Use FlashAttention from PyTorch
+        # The mask should be a boolean mask (True for keeping, False for masking) or a float mask.
+        if mask is not None and mask.dtype != torch.bool:
+            mask = mask.to(torch.bool)
+
+        atten_output = F.scaled_dot_product_attention(
+            q, k, v, 
+            attn_mask=mask,
+            dropout_p=0.2,
+            is_causal=False
+        )
+
+        # [B, H, S, D_head] -> [B, S, H, D_head] -> [B, S, D]
+        atten_output = atten_output.transpose(1, 2).reshape(batch_size, seq_len, self.model_dim)
+
+        return self.output(atten_output)
+    
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, model_dim: int = 256, num_heads: int = 4):
         """
@@ -76,7 +130,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionalEmbedding(nn.Module):
-    def __init__(self, model_dim: int):
+    def __init__(self, model_dim: int, max_len: int = 5000):
         """
         Compute dynamicalely the positional encoding for input sequences.
 
@@ -87,48 +141,76 @@ class PositionalEmbedding(nn.Module):
         """
         super(PositionalEmbedding, self).__init__()
         self.model_dim = model_dim
-            
-    def _compute_pe(self, x):
+
+        pe = torch.zeros(max_len, model_dim)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+
+        div_term = torch.exp(torch.arange(0, model_dim, 2).float() * -(math.log(10000.0) / model_dim))
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
         """
-        Compute the positional encoding for input tensor x.
+        Add pre-computed positional encoding to the input tensor x.
 
         Params
         -------
-        x: torch.Tensor
+        x : torch.Tensor
             input tensor of shape (batch_size, seq_len, model_dim)
         """
         seq_len = x.size(1)
-        device = x.device
-
-        position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)  # Tensor containing the position indices for each position in the sequences
-        div_term = torch.exp(torch.arange(0, self.model_dim, 2, device=device).float() * -(math.log(10000.0) / self.model_dim))
-        
-        # Scaling the position indices
-        pe = torch.zeros(seq_len, self.model_dim, device=device)  # Tensor later filled with positional encodings
-        pe[:, 0::2] = torch.sin(position * div_term)  # sin applied to the even indices
-        pe[:, 1::2] = torch.cos(position * div_term)  # cos applied to the odd indices
-        pe = pe.unsqueeze(0)
-    
-        return pe
-        
-    def forward(self, x):
-        x = x + self._compute_pe(x)
+        x = x + self.pe[:, :seq_len]
         return x
+
+    # def _compute_pe(self, x):
+    #     """
+    #     Compute the positional encoding for input tensor x.
+
+    #     Params
+    #     -------
+    #     x: torch.Tensor
+    #         input tensor of shape (batch_size, seq_len, model_dim)
+    #     """
+    #     seq_len = x.size(1)
+    #     device = x.device
+
+    #     position = torch.arange(seq_len, dtype=torch.float, device=device).unsqueeze(1)  # Tensor containing the position indices for each position in the sequences
+    #     div_term = torch.exp(torch.arange(0, self.model_dim, 2, device=device).float() * -(math.log(10000.0) / self.model_dim))
+        
+    #     # Scaling the position indices
+    #     pe = torch.zeros(seq_len, self.model_dim, device=device)  # Tensor later filled with positional encodings
+    #     pe[:, 0::2] = torch.sin(position * div_term)  # sin applied to the even indices
+    #     pe[:, 1::2] = torch.cos(position * div_term)  # cos applied to the odd indices
+    #     pe = pe.unsqueeze(0)
+    
+    #     return pe
+        
+    # def forward(self, x):
+    #     x = x + self._compute_pe(x)
+    #     return x
     
 
 class FeedForward(nn.Module):
-    def __init__(self, model_dim: int, ff_dim: int):
+    def __init__(self, model_dim: int, ff_dim: int, dropout: float):
         super(FeedForward, self).__init__()
 
         self.linear_1 = nn.Linear(model_dim, ff_dim)
-        self.relu = nn.ReLU()
+        self.gelu = nn.GELU()
         self.linear_2 = nn.Linear(ff_dim, model_dim)
+        self.dropout = nn.Dropout(dropout)
 
 
     def forward(self, x):
         feed_fwrd = self.linear_1(x)
-        feed_fwrd = self.relu(feed_fwrd)
+        feed_fwrd = self.gelu(feed_fwrd)
+        feed_fwrd = self.dropout(feed_fwrd)
         feed_fwrd = self.linear_2(feed_fwrd)
+        feed_fwrd = self.dropout(feed_fwrd)
         return feed_fwrd
     
 
