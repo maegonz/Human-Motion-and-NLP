@@ -142,14 +142,12 @@ class PositionalEmbedding(nn.Module):
         super(PositionalEmbedding, self).__init__()
         self.model_dim = model_dim
 
-        pe = torch.zeros(max_len, model_dim)
+        pe = torch.zeros(max_len, 1, model_dim)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-
         div_term = torch.exp(torch.arange(0, model_dim, 2).float() * -(math.log(10000.0) / model_dim))
 
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
 
         self.register_buffer('pe', pe)
@@ -161,7 +159,7 @@ class PositionalEmbedding(nn.Module):
         Params
         -------
         x : torch.Tensor
-            input tensor of shape (batch_size, seq_len, model_dim)
+            input tensor of shape (batch_size, seq_len, num_joints, model_dim)
         """
         seq_len = x.size(1)
         x = x + self.pe[:, :seq_len]

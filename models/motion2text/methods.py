@@ -4,7 +4,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-from ...metrics import contrastive_loss
+from ..metrics import contrastive_loss
 from torch.profiler import profile, record_function, ProfilerActivity
 
 
@@ -114,8 +114,8 @@ def training(model: nn.Module,
     return train_losses, val_metrics
 
 
-from ...metrics import Evaluator
-from .blocks import TextTokenizer
+from ..metrics import Evaluator
+from .transformers.blocks import TextTokenizer
 
 def validation(model: nn.Module, 
                val_loader: DataLoader,

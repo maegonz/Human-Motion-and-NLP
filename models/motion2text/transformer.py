@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-from .blocks import PositionalEmbedding, MLP
-from .encoders import Encoder
-from .decoders import Decoder
+from .transformers.blocks import PositionalEmbedding, MLP
+from .transformers.encoders import Encoder
+from .transformers.decoders import Decoder
 
 class Transformer(nn.Module):
     def __init__(self,

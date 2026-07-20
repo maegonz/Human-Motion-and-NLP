@@ -2,8 +2,10 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
-from .blocks import PositionalEmbedding, MLP
-from .encoders import Encoder
+from .transformers.blocks import PositionalEmbedding, MLP
+from .transformers.encoders import Encoder
+from.graph.encoders import STEncoder, TEncoder
+from typing import Optional
 
 class TransfoLM(nn.Module):
     def __init__(self,
@@ -14,7 +16,9 @@ class TransfoLM(nn.Module):
                  num_layers: int = 6, 
                  ff_dim: int = 2048,
                  max_seq_len: int = 100,
-                 dropout: float=0.2):
+                 dropout: float = 0.2,
+                 kernel_size: Optional[int] = 3,
+                 graph: bool = True):
         """
         Params
         -------
@@ -43,10 +47,17 @@ class TransfoLM(nn.Module):
         self.pos_embedding = PositionalEmbedding(model_dim)
 
         # Encoder layers
-        self.encoder = nn.ModuleList(
-            [Encoder(model_dim, num_heads, dropout, ff_dim) for _ in range(num_layers)]
-        )
-
+        if graph:
+            assert kernel_size > 1, "Kernel size must be greater than 1 for temporal convolution."
+            self.encoder = nn.ModuleList(
+                [STEncoder(model_dim, num_heads, kernel_size, dropout) for _ in range(num_layers)] + 
+                [TEncoder(model_dim, num_heads, dropout, ff_dim) for _ in range(num_layers)]
+            )
+        else:
+            self.encoder = nn.ModuleList(
+                [Encoder(model_dim, num_heads, dropout, ff_dim) for _ in range(num_layers)]
+            )
+        
         # Decoder layers
         self.lm = T5ForConditionalGeneration.from_pretrained(lm_name)
         for param in self.lm.parameters():
@@ -66,7 +77,7 @@ class TransfoLM(nn.Module):
         # Embedding and positional encoding
         B, T, _, _ = src.shape                 # src: (B, T, 22, 3)
 
-        src = src.view(B, T, -1)               # flatten joints (dynamically handles the 66)
+        # src = src.view(B, T, -1)               # flatten joints (dynamically handles the 66)
         src_emb = self.enc_embedding(src)      # (B, T, model_dim)
         src_emb = self.pos_embedding(src_emb)
         src_emb = self.dropout(src_emb)
