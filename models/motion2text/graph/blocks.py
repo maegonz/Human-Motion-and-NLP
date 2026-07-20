@@ -12,8 +12,7 @@ class SpatioTemporalAttention(nn.Module):
 
     This layer captures spatial interactions between different nodes (e.g., joints)
     independently at each frame in a temporal sequence. 
-    It computes scaled dot-product attention across the spatial dimension using 
-    PyTorch's optimized FlashAttention implementation (`F.scaled_dot_product_attention`).
+    It computes scaled dot-product attention across the spatial and the temporal dimension.
 
     Parameters
     ----------
@@ -27,7 +26,7 @@ class SpatioTemporalAttention(nn.Module):
         softmax operation.
     mode : str, default="spatial"
         Specifies the mode of attention. Currently supports "spatial" for
-        spatial attention across joints.
+        spatial attention across joints and "temporal" for temporal attention.
 
     Attributes
     ----------
@@ -83,24 +82,23 @@ class SpatioTemporalAttention(nn.Module):
         """
         Compute scaled dot-product attention using PyTorch's optimized implementation.
         """
-        
-        print(f"Query shape: {query.shape}")
-        print(f"Key shape: {key.shape}")
-        print(f"Value shape: {value.shape}")
 
-        B, L, S = query.size(0), query.size(-2), key.size(-2)
+        L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(self.head_dim) if scale is None else scale
-        attn_bias = torch.zeros(B, L, S, dtype=query.dtype, device=query.device)
-
-        if attn_mask is not None:
-            if attn_mask.dtype == torch.bool:
-                attn_bias = attn_bias.masked_fill_(~attn_mask[:, None, :], float("-inf"))
-
+        # [B, H, J, S, D_head] @ [B, H, J, D_head, S] -> [B, H, J, S, S]
         attn_weight = query @ key.transpose(-2, -1) * scale_factor
-        attn_weight += attn_bias
+
+        if self.mode == "temporal":
+            attn_weight = attn_weight.masked_fill(attn_mask, -1e9)
+
         attn_weight = torch.softmax(attn_weight, dim=-1)
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
-        return attn_weight @ value
+        output = attn_weight @ value  # [B, H, J, S, D_head]
+
+        if self.mode == "spatial":
+            output = output.masked_fill(attn_mask, float(0.0))
+            
+        return output
 
     def forward(self, Q, K, V, mask=None):
         assert Q.shape == K.shape == V.shape, "Q, K, and V must have the same shape"
@@ -109,22 +107,28 @@ class SpatioTemporalAttention(nn.Module):
         
         # [B, S, J, D] -> [B, S, J, 3 * D]
         qkv = self.qkv_projection(Q)
-        # Form back heads [B, S, J, 3, H, D_head]
+        # -> [B, S, J, 3, H, D_head]
         qkv = qkv.view(batch_size, seq_len, num_joints, 3, self.num_heads, self.head_dim)
         
         if self.mode == "spatial":
-            # [3, B, H, S, J, D_head]
+            # -> [3, B, H, S, J, D_head]
             qkv = qkv.permute(3, 0, 4, 2, 1, 5)
         else:
-            # [3, B, H, J, S, D_head]
+            # -> [3, B, H, J, S, D_head]
             qkv = qkv.permute(3, 0, 4, 1, 2, 5)
         
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        # Use FlashAttention from PyTorch
-        # The mask should be a boolean mask (True for keeping, False for masking) or a float mask.
-        if mask is not None and mask.dtype != torch.bool:
-            mask = mask.to(torch.bool)
+        # Boolean mask necessary (True for keeping, False for masking) or a float mask.
+        if mask is not None:
+            if  mask.dtype != torch.bool:
+                mask = mask.to(torch.bool)
+            if self.mode == "spatial":
+                # [B, S] -> [B, 1, S, 1, 1]
+                mask = mask[:, None, None, :, None]
+            else:
+                # [B, S] -> [B, 1, 1, 1, S]
+                mask = mask[:, None, :, None, None]
 
         atten_output = self.sdp_attention(        # F.scaled_dot_product_attention(
             q, k, v, 
