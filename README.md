@@ -1,4 +1,7 @@
-# Human Motion Project
+# Human Motion - Motion2Text & Text2Motion
+
+<center><img src="figures/animation.gif" alt="animation" width="350"/></center>
+<!-- ![](/figures/animation.gif) -->
 
 ## Overview
 
@@ -12,8 +15,6 @@ This project explores the intersection of **Natural Language Processing** and **
 This project is based on a courses conducted by `Hazem Wannous` professor at IMT Nord Europe.
 The project uses the HumanML3D dataset containing 3D human motion sequences paired with rich textual descriptions. This enables models to learn mappings between **language** and **motion**. 
 
-![](/src/animation.gif)
-
 
 ## Roadmap
 
@@ -22,30 +23,30 @@ The project uses the HumanML3D dataset containing 3D human motion sequences pair
 | Motion-to-Text Generation | ✅ Implemented | Generate natural language descriptions from 3D motion sequences. |
 | Gesture-to-Motion Generation | ⏳ Future | Generate 3D motion sequences from textual descriptions of gestures with SMPL models. |
 
-## Structure
-```
-.
-├── data/                 
-│   ├── motion_dataset.py   # Dataset class implementation
-│   ├── motion_sampler.py   # Sampler implementation
-│   └── utils.py            # collate function definition
-│
-├── models/
-│   └── transformers/
-│   │   ├── ...
-│   │   ├── transfoLM.py    # transformer encoder + T5 decoder
-│   │   └── transformer.py  # transformer implementation
-│   └── metrics.py          # Bleu implementation
-│
-├── notebooks/              # test notebooks
-│   └── circuits/
-│
-├── animation.gif
-├── Challenge_Human_Motion... .py  # Description of the task and the data
-├── main.py
-├── LICENSE
-└── README.md
-```
+## Architecture
+
+This project implements different deep learning architectures for both **motion-to-text** and **text-to-motion** generation.
+
+### Motion-to-Text
+
+For the **motion-to-text** task, the following architectures are explored:
+
+- **Transformer Encoder + Pre-trained Language Model Decoder**  
+  <!-- Combines a Transformer encoder for motion representation with a pre-trained language model decoder, leveraging transfer learning to benefit from rich linguistic knowledge acquired from large-scale text corpora. -->
+
+- **Transformer from Scratch**  
+  <!-- A fully Transformer-based encoder-decoder architecture trained end-to-end without pre-trained components. This approach enables direct optimization for the motion captioning task while providing greater flexibility in architecture design and hyperparameter tuning. -->
+
+- **Transformer with Spatio-Temporal Attention and Temporal Convolution**  
+  <!-- Enhances motion representation by jointly modeling spatial relationships between body joints and temporal dependencies across motion sequences. Temporal convolution layers capture local motion dynamics, while spatio-temporal attention models long-range interactions, producing richer and more expressive motion embeddings. -->
+
+### Text-to-Motion
+
+For the **text-to-motion** task, the project explores multiple **Graph Transformer** architectures derived from the motion-to-text Transformer models described above. 
+<!-- By representing the human skeleton as a graph, these models explicitly capture the spatial relationships between body joints while modeling temporal dependencies across motion sequences. The explored variants adapt the standard Transformer, the Transformer with pre-trained components, and the Spatio-Temporal Transformer to graph-structured motion representations. -->
+
+In addition, the project investigates a **Diffusion Graph Model**, which combines graph-based skeletal representations with the generative capabilities of diffusion models. 
+<!-- The diffusion process progressively synthesizes realistic and temporally coherent human motion conditioned on natural language descriptions, aiming to improve both the quality of the generated motions and their semantic alignment with the input text. -->
 
 ## Dataset Overview
 
@@ -70,29 +71,13 @@ The project uses the HumanML3D dataset containing 3D human motion sequences pair
 ```
 a man full-body sideways jumps to his left.#a/DET man/NOUN fullbody/NOUN sideways/ADV jump/VERB to/ADP his/DET left/NOUN#0.0#0.0
 a person jumps straight to the left.#a/DET person/NOUN jump/VERB straight/ADV to/ADP the/DET left/NOUN#0.0#0.0
-a person jumps sideways to the left#a/DET person/NOUN jump/VERB sideways/ADV to/ADP the/DET left/NOUN#0.0#0.0
-a person jump hop to the right#a/DET person/NOUN jump/NOUN hop/NOUN to/ADP the/DET right/NOUN#0.0#0.0
 ```
 
 *Note : more information about the dataset and how to obtain it can be found [there](https://github.com/EricGuo5513/HumanML3D).*
 
-## Architecture
-
-The project implements two complementary architectures for motion-to-text generation:
-
-1. **Transformer Encoder + Pre-trained Language Model Decoder**
-   - Encodes 3D motion sequences using a transformer encoder
-   - Decodes using a pre-trained language model (defaults to T5)
-   - Leverages transfer learning from large-scale text corpora
-   - Benefits from pre-trained linguistic knowledge
-
-2. **Transformer Model from Scratch**
-   - Custom transformer architecture trained end-to-end on the HumanML3D dataset
-   - Allows direct optimization for motion-to-text task
-   - Provides flexibility in architecture design and hyperparameter tuning
 
 
-## Current Usage
+<!-- ## Current Usage
 
 The project currently supports:  
 - Loading HumanML3D motion and text data  
@@ -101,5 +86,35 @@ The project currently supports:
 
 Future updates will include:  
 - Gesture-to-motion generation  
-- Bidirectional motion-language modeling
+- Bidirectional motion-language modeling -->
 
+## Structure
+```
+.
+├── data/                 
+│   ├── motion_dataset.py    # Dataset class implementation
+│   ├── motion_sampler.py    # Sampler implementation
+│   └── utils.py             # collate function definition
+│
+├── figures/                 # performances plot
+│
+├── models/
+│    ├── motion2text/   
+│    │   ├── graph/          # graph convolution + attention
+│    │   ├── transformers/   # transformer from scratch
+│    │   ├── ...
+│    │   └── transfoLM.py    # transformer encoder + T5 decoder
+│    │
+│    ├── text2motion/        # in progress 
+│    │
+│    └── metrics.py          # Bleu implementation
+│
+│
+├── utils.py
+├── main.py
+├── LICENSE
+└── README.md
+```
+
+## Author
+Project created by Antony Manuel.
