@@ -4,7 +4,8 @@ from transformers import AutoTokenizer, T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
 from .transformers.blocks import PositionalEmbedding, MLP
 from .transformers.encoders import Encoder
-from.graph.encoders import STEncoder, TEncoder
+from .graph.encoders import STEncoder, TEncoder
+from .graph.blocks import JointAggregator
 from typing import Optional
 
 class TransfoLM(nn.Module):
@@ -58,7 +59,7 @@ class TransfoLM(nn.Module):
                 [Encoder(model_dim, num_heads, dropout, ff_dim) for _ in range(num_layers)]
             )
         
-        # Decoder layers
+        # T5 decoder layers
         self.lm = T5ForConditionalGeneration.from_pretrained(lm_name)
         for param in self.lm.parameters():
             param.requires_grad = False     # Freeze LM parameters
@@ -67,6 +68,7 @@ class TransfoLM(nn.Module):
 
         # Projection layer 
         # Map motion encoder output to LM model dimension
+        self.aggregator = JointAggregator(model_dim=model_dim, num_queries=4, dropout=dropout)
         self.projection = MLP(model_dim=model_dim, lm_model_dim=self.lm.config.d_model, dropout=dropout)
 
         # Dropout layer
@@ -78,7 +80,7 @@ class TransfoLM(nn.Module):
         B, T, _, _ = src.shape                 # src: (B, T, 22, 3)
 
         # src = src.view(B, T, -1)               # flatten joints (dynamically handles the 66)
-        src_emb = self.enc_embedding(src)      # (B, T, model_dim)
+        src_emb = self.enc_embedding(src)      # (B, T, J, model_dim)
         src_emb = self.pos_embedding(src_emb)
         src_emb = self.dropout(src_emb)
 
@@ -87,8 +89,18 @@ class TransfoLM(nn.Module):
         for encoder in self.encoder:
             encoder_output = encoder(encoder_output, mask=encoder_attn_mask)
 
-        # Project motion encoder output to LM model dimension
-        motion_embeds = self.projection(encoder_output)  # (B, T, lm_d_model)
+        # TODO: Ensure that the attention mask is correctly updated to reflect the concatenated sequence length
+        if encoder_attn_mask is None:
+            # If no mask is given, assume all incoming motion frames are valid (shape: B, T)
+            encoder_attn_mask = torch.ones(B, T, device=src.device, dtype=torch.float32)
+        else:
+            encoder_attn_mask = encoder_attn_mask.to(dtype=torch.float32)
+
+        # Apply joint aggregation to get a single representation per frame
+        motion_embeds, encoder_attn_mask = self.aggregator(encoder_output, mask=encoder_attn_mask)  # (B, T, model_dim)
+
+        # # Project motion encoder output to LM model dimension
+        # motion_embeds = self.projection(encoder_output)  # (B, T, lm_d_model)
 
         # Expand prefix
         prefix_ids = prefix_ids.to(src.device).expand(B, -1)
@@ -96,18 +108,8 @@ class TransfoLM(nn.Module):
         
         # Get T5's internal embeddings for the text prefix
         # We use shared() to access the input embedding matrix of T5
-        prefix_embeds = self.lm.shared(prefix_ids) 
-        
-        # Concatenate text prompt + motion sequence
+        prefix_embeds = self.lm.shared(prefix_ids)
         combined_embeds = torch.cat([prefix_embeds, motion_embeds], dim=1)
-        
-        # Update the attention mask to account for the new prefix length
-        # TODO: Ensure that the attention mask is correctly updated to reflect the concatenated sequence length
-        if encoder_attn_mask is None:
-            # If no mask is given, assume all incoming motion frames are valid (shape: B, T)
-            encoder_attn_mask = torch.ones(B, T, device=src.device, dtype=torch.float32)
-        else:
-            encoder_attn_mask = encoder_attn_mask.to(dtype=torch.float32)
         
         prefix_mask = torch.ones(B, prefix_len, device=src.device, dtype=torch.float32)  # Prefix text mask
         combined_mask = torch.cat([prefix_mask, encoder_attn_mask], dim=1)               # (B, prefix_len + T)

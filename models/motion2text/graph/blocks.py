@@ -175,3 +175,94 @@ class TemporalConv(nn.Module):
         # x = self.dropout(x)
         # [B, D, S, J] -> [B, S, J, D]
         return x.permute(0, 2, 3, 1)
+
+
+from ..transformers.blocks import FeedForward, FastMultiHeadAttention
+
+class JointAggregator(nn.Module):
+    """
+    Learns to aggregate joints using Cross-Attention layer for spatio-temporal graphs.
+    This layer computes attention across different joints (nodes) in a graph,
+    allowing the model to capture inter-joint dependencies.
+
+    Parameters
+    ----------
+    model_dim : int, default=256
+        The total dimensionality of the input and output features (D).
+    num_queries: int, default=4
+        Number of query nodes (joints) in the graph. (K)
+    num_heads : int, default=8
+        Number of attention heads (H). `model_dim` must be divisible 
+        by `num_heads`.
+    n_layers : int, default=4
+        Number of stacked attention layers.
+    dropout : float, default=0.2
+        Dropout probability applied to the attention scores during the softmax operation.
+    """
+    def __init__(self, model_dim: int=512,
+                 num_queries: int=4,
+                 num_heads: int=8,
+                 n_layers: int=4,
+                 dropout: float=0.2):
+        super(JointAggregator, self).__init__()
+        assert model_dim % num_heads == 0, "Model's dimension must be divisible by num_heads"
+
+        self.model_dim = model_dim
+        self.num_queries = num_queries
+        self.num_heads = num_heads
+
+        self.joint_embed = nn.Embedding(num_queries, model_dim)  # Help distinguish between different joints in the graph, for example, the left wrist from the right ankle.
+
+        self.queries = nn.Parameter(
+            torch.randn(num_queries, model_dim)
+        )
+        
+        self.attn = nn.ModuleList(
+            [FastMultiHeadAttention(model_dim, num_heads) for _ in range(n_layers)]
+        )
+        
+        self.ff = FeedForward(model_dim, model_dim * 4, dropout)
+        self.layer_norm = nn.LayerNorm(model_dim)
+
+    def forward(self, x: torch.Tensor, mask: Union[None, torch.Tensor] = None):
+        """
+        Forward pass for the Joint Aggregator layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape [B, S, J, D], where B is batch size,
+            S is sequence length, J is number of joints, and D is model dimension.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape [B, S * K, D] after applying joint aggregation.
+        """
+        batch_size, seq_len, num_joints, model_dim = x.size()
+
+        # joint_ids = torch.arange(num_joints, device=x.device)
+        # joint_pos = self.joint_embed(joint_ids).to(x.device)   # [J, D]
+        # x = x + joint_pos.unsqueeze(0).unsqueeze(0)            # [1, 1, J, D] -> broadcast to [B, S, J, D]
+        
+        # Expand queries to match batch size and sequence length -> [B * S, K, D]
+        queries = self.queries.unsqueeze(0).expand(batch_size * seq_len, -1, -1)
+        
+        # Reshape input for attention -> [B * S, J, D]
+        joints = x.view(batch_size * seq_len, num_joints, model_dim)
+        
+        for layer in self.attn:
+            attn_output = layer(queries, joints, joints)  # [B * S, K, D]
+            queries = self.layer_norm(queries + attn_output)
+            ff_output = self.ff(queries)
+            queries = self.layer_norm(queries + ff_output)
+        
+        # Reshape queries back to [B, S, K, D]
+        queries = queries.view(batch_size, seq_len, self.num_queries, model_dim)
+
+        aggregated = queries.flatten(1, 2)
+        if mask is not None:
+            mask = mask.view(batch_size, seq_len, 1).expand(-1, -1, self.num_queries).reshape(batch_size, -1)
+            assert mask.shape == aggregated.shape[:2], f"Mask shape {mask.shape} does not match aggregated shape {aggregated.shape[:2]}"
+        
+        return aggregated, mask
