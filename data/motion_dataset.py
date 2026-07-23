@@ -106,7 +106,7 @@ class MotionDataset(Dataset):
                 "motion": motion,
                 "captions": text,
                 "input_ids": tokens["input_ids"],  # shape: (1, seq_len)
-                "t5_attn_mask": tokens["attention_mask"],  # shape: (1, seq_len)
+                # "t5_attn_mask": tokens["attention_mask"],  # shape: (1, seq_len)
             }
         else:
             return {

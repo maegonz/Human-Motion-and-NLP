@@ -74,11 +74,10 @@ def training(model: nn.Module,
 
             motion = item['motion'].to(device, non_blocking=True)
             captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
-            t5_attn_mask = item['t5_attn_mask'].squeeze(1).to(device, non_blocking=True)
             encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
 
             with autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
-                outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, prefix_ids=prefix_ids)
+                outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, prefix_ids=prefix_ids)
 
                 motion_features, text_features = outputs["motion_embeddings"].to(device, non_blocking=True), outputs["text_embeddings"].to(device, non_blocking=True)
 
@@ -161,12 +160,11 @@ def validation(model: nn.Module,
             all_generated = []
             motion = item['motion'].to(device, non_blocking=True)
             captions_tokens = item['input_ids'].squeeze(1).to(device, non_blocking=True)
-            t5_attn_mask = item['t5_attn_mask'].squeeze(1).to(device, non_blocking=True)
             encoder_attn_mask = item['attn_mask'].squeeze(1).to(device, non_blocking=True)
             captions = item['captions']
 
             with autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
-                outputs_ids = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, t5_attn_mask=t5_attn_mask, generation=True, prefix_ids=prefix_ids)
+                outputs_ids = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, generation=True, prefix_ids=prefix_ids)
                 outputs = tokenizer.batch_decode(outputs_ids, skip_special_tokens=True)
 
             all_references.extend(captions)
