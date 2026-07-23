@@ -32,7 +32,7 @@ class TEncoder(nn.Module):
         super(TEncoder, self).__init__()
         self.t_atten = SpatioTemporalAttention(model_dim, num_heads, dropout, mode="temporal")
         self.layer_norm = nn.LayerNorm(model_dim)
-        self.ff = FeedForward(model_dim, ff_dim, dropout)
+        self.ff = FeedForward(model_dim, model_dim, ff_dim, dropout)
         self.dropout = nn.Dropout(dropout)
 
 

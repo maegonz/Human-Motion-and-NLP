@@ -194,43 +194,35 @@ class PositionalEmbedding(nn.Module):
     
 
 class FeedForward(nn.Module):
-    def __init__(self, model_dim: int, ff_dim: int, dropout: float):
+    def __init__(self, input_dim: int, model_dim: int, ff_dim: int, dropout: float=0.2, swiglu: bool=False):
         super(FeedForward, self).__init__()
+        self.swiglu = swiglu
 
-        self.linear_1 = nn.Linear(model_dim, ff_dim)
-        self.gelu = nn.GELU()
-        self.linear_2 = nn.Linear(ff_dim, model_dim)
-        self.dropout = nn.Dropout(dropout)
+        if swiglu:
+            self.w1 = nn.Linear(input_dim, ff_dim, bias=False)
+            self.w2 = nn.Linear(model_dim, ff_dim, bias=False)
+            self.w3 = nn.Linear(ff_dim, model_dim, bias=False)
+            self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
+        else:
+            self.ff = nn.Sequential(
+                nn.Linear(input_dim, ff_dim),
+                nn.GELU(approximate='tanh'),
+                nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+                nn.Linear(ff_dim, model_dim),
+                nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+            )
 
     def forward(self, x):
-        feed_fwrd = self.linear_1(x)
-        feed_fwrd = self.gelu(feed_fwrd)
-        feed_fwrd = self.dropout(feed_fwrd)
-        feed_fwrd = self.linear_2(feed_fwrd)
-        feed_fwrd = self.dropout(feed_fwrd)
+        if self.swiglu:
+            x = F.silu(self.w1(x)) * self.w2(x)
+            feed_fwrd = self.w3(self.dropout(x))
+            feed_fwrd = self.dropout(feed_fwrd)
+        else:
+            feed_fwrd = self.ff(x)
+
         return feed_fwrd
-    
-
-class MLP(nn.Module):
-    def __init__(self, model_dim=512, lm_model_dim=512, dropout=0.1, act_fn: nn.Module = nn.GELU):
-        super().__init__()
-        self.adapter = nn.Sequential(
-            nn.Linear(model_dim, lm_model_dim),
-            act_fn(),  # Smoother than ReLu
-            nn.Dropout(dropout),
-            nn.Linear(lm_model_dim, lm_model_dim),
-            act_fn(),
-            nn.Dropout(dropout),
-            nn.Linear(lm_model_dim, lm_model_dim)
-        )
-
-        self.layer_norm = nn.LayerNorm(lm_model_dim)
-        
-    def forward(self, x):
-        x = self.adapter(x)
-        x = self.layer_norm(x)
-        return x    
+     
 
 import torch
 import torch.nn as nn

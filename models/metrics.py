@@ -75,15 +75,17 @@ def contrastive_loss(motion_features, text_features, temperature=0.07):
     text_features = F.normalize(text_features, dim=-1)
     
     # Calculate logits (batch_size, batch_size)
-    logits = torch.matmul(motion_features, text_features.T) / temperature
+    logits_scale = 1.0 / temperature
+    logits = torch.matmul(motion_features, text_features.T) * logits_scale
     
     # Labels are diagonal (each motion matches its own text)
-    labels = torch.arange(motion_features.size(0)).to(motion_features.device)
+    batch_size = motion_features.size(0)
+    labels = torch.arange(batch_size, device=motion_features.device)
     
     loss_m = F.cross_entropy(logits, labels)
-    loss_t = F.cross_entropy(logits.T, labels)
+    loss_t = F.cross_entropy(logits.T.contiguous(), labels)
     
-    return (loss_m + loss_t) / 2
+    return (loss_m + loss_t) * 0.5
 
 
 class Evaluator:
