@@ -141,17 +141,20 @@ class TransfoLM(nn.Module):
             return outputs_ids
         
         # === Training Mode ===
-        # if tgt.device != device:
-        #     tgt = tgt.to(device, non_blocking=True)
+        labels = tgt.clone()
+        labels[labels == self.lm.config.pad_token_id] = -100  # Ignore padding tokens in loss computation
 
         # Forward pass
         outputs = self.lm(
             encoder_outputs=t5_encoder_outputs,
             attention_mask=combined_mask,
-            labels=tgt,
+            labels=labels,
             return_dict=True
         )
 
+        # =====================================================
+        #  Global Mean Pooling for motion and text embeddings
+        # =====================================================
         # --- Masked Mean for Motion Embeddings ---
         motion_weights = encoder_attn_mask.unsqueeze(-1) # (B, T, 1)
         motion_sum_len = motion_weights.sum(dim=1).clamp_min(1.0)  # Avoid division by zero

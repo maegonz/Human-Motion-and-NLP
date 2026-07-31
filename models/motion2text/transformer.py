@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .transformers.blocks import PositionalEmbedding, MLP
+from .transformers.blocks import PositionalEmbedding, FeedForward
 from .transformers.encoders import Encoder
 from .transformers.decoders import Decoder
 
@@ -11,7 +11,7 @@ class Transformer(nn.Module):
                  model_dim: int = 512, 
                  num_heads: int = 8, 
                  num_layers: int = 6, 
-                 ff_dim: int = 2048,
+                 ff_dim: int = 512,
                  max_seq_len: int = 100,
                  dropout: float=0.2):
         """
@@ -37,7 +37,7 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         # Embedding layers
         # TODO: Consider using a more complex embedding strategy for motion data, such as a small CNN or MLP, instead of a simple linear layer.
-        self.enc_embedding = MLP(motion_dim, model_dim)
+        self.enc_embedding = FeedForward(motion_dim, motion_dim, model_dim)
         self.deco_embedding = nn.Embedding(tgt_vocab_size, model_dim)
         self.pos_embedding = PositionalEmbedding(model_dim, max_seq_len)
         
@@ -52,7 +52,7 @@ class Transformer(nn.Module):
         )
 
         # Projection layer to map decoder output to target vocabulary size
-        self.projection = MLP(model_dim, tgt_vocab_size)
+        self.projection = FeedForward(model_dim, model_dim, tgt_vocab_size)
         self.dropout = nn.Dropout(dropout)
 
     def generate_mask(self, src, tgt):

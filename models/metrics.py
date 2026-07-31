@@ -65,6 +65,34 @@ nltk.download('wordnet', quiet=True)
 #     scores['cider'] = cider(reference, generated)
 #     return scores
 
+from typing import Optional
+
+def cross_entropy_loss(logits, target, pad_token_id: Optional[int]=-100):
+    """
+    Compute cross-entropy loss for sequence generation tasks, ignoring padding tokens.
+    
+    Parameters
+    ----------
+    logits: torch.Tensor
+        of shape (batch_size, seq_len, vocab_size)
+    target: torch.Tensor
+        of shape (batch_size, seq_len)
+    pad_token_id: int
+        The ID used for padding tokens in the target sequence.
+    
+    Returns
+    -------
+    loss: Scalar tensor representing the average cross-entropy loss over non-padding tokens.
+    """
+    labels = target.clone()
+
+    logits = logits.permute(0, 2, 1)  # (batch_size, vocab_size, seq_len)
+
+    # Compute cross-entropy loss, ignoring padding tokens
+    loss = F.cross_entropy(logits, labels, ignore_index=pad_token_id)
+
+    return loss
+
 def contrastive_loss(motion_features, text_features, temperature=0.07):
     """
     motion_features: [batch, dim] (Mean-pooled output of MotionAdapter)

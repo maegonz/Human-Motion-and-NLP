@@ -4,7 +4,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-from ..metrics import contrastive_loss
+from ..metrics import contrastive_loss, cross_entropy_loss
 from torch.profiler import profile, record_function, ProfilerActivity
 
 
@@ -26,14 +26,14 @@ def training(model: nn.Module,
         The neural network model to be trained.
     train_loader : DataLoader
         DataLoader providing the training dataset.
-    criterion : nn.Module
-        Loss function used to compute training loss.
     optimizer : torch.optim.Optimizer
         Optimizer used to update model parameters.
     device : torch.device
         Device on which to train the model ('cpu' or 'cuda').
     epochs : int
         Number of training epochs.
+    prefix_ids : torch.Tensor
+        Tensor containing the IDs of the prefix tokens.
     val_loader : DataLoader, optional
         DataLoader providing the validation dataset.
         If None, no validation is performed. Default is None.
@@ -64,6 +64,8 @@ def training(model: nn.Module,
     train_losses = []
     val_metrics = []
 
+    pad_token_id = train_loader.dataset.tokenizer.pad_token_id
+
     epoch_tqdm = tqdm(range(epochs), desc="Training Progress")
 
     for epoch in epoch_tqdm:
@@ -79,9 +81,9 @@ def training(model: nn.Module,
             with autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
                 outputs = model(motion, captions_tokens, encoder_attn_mask=encoder_attn_mask, prefix_ids=prefix_ids)
 
-                motion_features, text_features = outputs["motion_embeddings"].to(device, non_blocking=True), outputs["text_embeddings"].to(device, non_blocking=True)
+                motion_features, text_features = outputs["motion_embeddings"], outputs["text_embeddings"]
 
-                ce_loss = outputs["loss"].to(device, non_blocking=True)
+                ce_loss = outputs["loss"] if outputs["loss"] is not None else cross_entropy_loss(outputs["decoder_output"], captions_tokens, pad_token_id)
                 cl_loss = contrastive_loss(motion_features, text_features)
 
                 # Combine them (lambda is a hyperparameter, start with 0.1)

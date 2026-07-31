@@ -79,64 +79,122 @@ class SpatioTemporalAttention(nn.Module):
         self.output = nn.Linear(model_dim, model_dim)
 
     def forward(self, Q, K, V, mask=None):
-        assert Q.shape == K.shape == V.shape, "Q, K, and V must have the same shape"
-        assert Q is K and K is V, "For Self-Attention, Q, K, and V should be the same"
-
-        batch_size, seq_len, num_joints, _ = Q.size()
-
-        # [B, S, J, D] -> [B, S, J, 3 * D]
-        qkv = self.qkv_projection(Q)
-        
-        # [B, S, J, 3, H, D_head]
-        qkv = qkv.view(batch_size, seq_len, num_joints, 3, self.num_heads, self.head_dim)
-
-        if self.mode == "spatial":
-            # [3, B*S, H, J, D_head]
-            qkv = qkv.permute(3, 0, 1, 4, 2, 5).contiguous().view(
-                3, batch_size * seq_len, self.num_heads, num_joints, self.head_dim
-            )
-        else:
-            # [3, B*J, H, S, D_head]
-            qkv = qkv.permute(3, 0, 2, 4, 1, 5).contiguous().view(
-                3, batch_size * num_joints, self.num_heads, seq_len, self.head_dim
-            )
-
-        q, k, v = qkv[0], qkv[1], qkv[2]
-
-        # Boolean mask necessary (True for keeping, False for masking) or a float mask.
         attn_mask = None
-        if mask is not None:
-            if mask.dtype != torch.bool:
-                mask = mask.to(torch.bool)
-            
-            if self.mode == "spatial":
-                # [B, S] -> [B * S, 1, J, J]
-                attn_mask = mask.view(batch_size * seq_len, 1, 1, 1)
-                attn_mask = attn_mask.expand(-1, 1, num_joints, num_joints).contiguous()
-            else:
-                # [B, S] -> [B * J, 1, S, S]
-                attn_mask = mask.unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
-                attn_mask = attn_mask.repeat_interleave(num_joints, dim=0) # [B * J, 1, 1, S]
-                attn_mask = attn_mask.expand(-1, 1, seq_len, seq_len).contiguous()
-
         dropout_p = self.dropout_p if self.training else 0.0
-        atten_output = F.scaled_dot_product_attention(
-            q, k, v, 
-            attn_mask=attn_mask, 
-            dropout_p=dropout_p
-        )
+        
+        if Q is K and K is V:
+            # For Self-Attention, Q, K, and V should be the same
+            # assert Q.shape == K.shape == V.shape, "Q, K, and V must have the same shape"
+            batch_size, seq_len, num_joints, _ = Q.size()
 
-        # [B, S, J, D]
-        if self.mode == "spatial":
-            atten_output = atten_output.view(batch_size, seq_len, self.num_heads, num_joints, self.head_dim)
-            atten_output = atten_output.permute(0, 1, 3, 2, 4).contiguous()
+            # [B, S, J, D] -> [B, S, J, 3 * D]
+            qkv = self.qkv_projection(Q)
+            # [B, S, J, 3, H, D_head]
+            qkv = qkv.view(batch_size, seq_len, num_joints, 3, self.num_heads, self.head_dim)
+
+            if self.mode == "spatial":
+                # [3, B*S, H, J, D_head]
+                qkv = qkv.permute(3, 0, 1, 4, 2, 5).contiguous().view(
+                    3, batch_size * seq_len, self.num_heads, num_joints, self.head_dim
+                )
+            else:
+                # [3, B*J, H, S, D_head]
+                qkv = qkv.permute(3, 0, 2, 4, 1, 5).contiguous().view(
+                    3, batch_size * num_joints, self.num_heads, seq_len, self.head_dim
+                )
+            q, k, v = qkv[0], qkv[1], qkv[2]
+
+            # Boolean mask necessary (True for keeping, False for masking) or a float mask.
+            if mask is not None:
+                if mask.dtype != torch.bool:
+                    mask = mask.to(torch.bool)
+                
+                if self.mode == "spatial":
+                    # [B, S] -> [B * S, 1, J, J]
+                    attn_mask = mask.view(batch_size * seq_len, 1, 1, 1)
+                    attn_mask = attn_mask.expand(-1, 1, num_joints, num_joints).contiguous()
+                else:
+                    # [B, S] -> [B * J, 1, S, S]
+                    attn_mask = mask.unsqueeze(1).unsqueeze(1) # [B, 1, 1, S]
+                    attn_mask = attn_mask.repeat_interleave(num_joints, dim=0) # [B * J, 1, 1, S]
+                    attn_mask = attn_mask.expand(-1, 1, seq_len, seq_len).contiguous()
+
+            atten_output = F.scaled_dot_product_attention(
+                q, k, v, 
+                attn_mask=attn_mask, 
+                dropout_p=dropout_p
+            )
+
+            # [B, S, J, D]
+            if self.mode == "spatial":
+                atten_output = atten_output.view(batch_size, seq_len, self.num_heads, num_joints, self.head_dim)
+                atten_output = atten_output.permute(0, 1, 3, 2, 4).contiguous()
+            else:
+                atten_output = atten_output.view(batch_size, num_joints, self.num_heads, seq_len, self.head_dim)
+                atten_output = atten_output.permute(0, 3, 1, 2, 4).contiguous()
+
+            atten_output = atten_output.view(batch_size, seq_len, num_joints, self.model_dim)
+
+            return self.output(atten_output)
+        
         else:
-            atten_output = atten_output.view(batch_size, num_joints, self.num_heads, seq_len, self.head_dim)
-            atten_output = atten_output.permute(0, 3, 1, 2, 4).contiguous()
+            # For Cross-Attention, Q, K, and V can be different
+            # assert K is V, "For Cross-Attention, K and V must be the same"
+            batch_size, text_seq_len, _, _ = Q.size()
+            _, motion_seq_len, num_joints, _ = K.size()
 
-        atten_output = atten_output.view(batch_size, seq_len, num_joints, self.model_dim)
+            # Project Q, K, V separately
+            q = F.linear(Q, self.qkv_projection.weight[:self.model_dim], self.qkv_projection.bias[:self.model_dim])
+            k = F.linear(K, self.qkv_projection.weight[self.model_dim:2*self.model_dim], self.qkv_projection.bias[self.model_dim:2*self.model_dim])
+            v = F.linear(V, self.qkv_projection.weight[2*self.model_dim:], self.qkv_projection.bias[2*self.model_dim:])
 
-        return self.output(atten_output)
+            # [B, L, 1, D] -> [B, L, H, D_head]
+            q = q.view(batch_size, text_seq_len, self.num_heads, self.head_dim)
+            # [B, S, J, D] -> [B, S, J, H, D_head]
+            k = k.view(batch_size, motion_seq_len, num_joints, self.num_heads, self.head_dim)
+            v = v.view(batch_size, motion_seq_len, num_joints, self.num_heads, self.head_dim)
+
+            if self.mode == "spatial":
+                return NotImplementedError("Cross-Attention in spatial mode is not implemented yet.")
+                # # [B, L, H, D_head] -> [B*L, H, 1, D_head]
+                # q = q.view(batch_size * text_seq_len, self.num_heads, 1, self.head_dim)
+                # # [B, S, J, H, D_head] -> [B*S, H, J, D_head]
+                # k = k.view(batch_size * motion_seq_len, self.num_heads, num_joints, self.head_dim)
+                # v = v.view(batch_size * motion_seq_len, self.num_heads, num_joints, self.head_dim)
+
+            else:
+                # [B, L, H, D_head] -> [B, 1, H, L, D_head]
+                q = q.permute(0, 2, 1, 3).contiguous().unsqueeze(1) 
+                # [B, S, J, H, D_head] -> [B, J, H, S, D_head]
+                k = k.permute(0, 2, 3, 1, 4).contiguous()
+                v = v.permute(0, 2, 3, 1, 4).contiguous()
+            
+            # Boolean mask necessary (True for keeping, False for masking) or a float mask.
+            if mask is not None:
+                if mask.dtype != torch.bool:
+                    mask = mask.to(torch.bool)
+                
+                if self.mode == "spatial":
+                    return NotImplementedError("Cross-Attention in spatial mode is not implemented yet.")
+                    # # [B, S] -> [B * S, 1, J, J]
+                    # attn_mask = mask.view(batch_size * seq_len, 1, 1, 1)
+                    # attn_mask = attn_mask.expand(-1, 1, num_joints, num_joints).contiguous()
+                else:
+                    # [B, S] -> [B, 1, H, L, S]
+                    attn_mask = mask[:, None, None, None, :]      # (B, 1, 1, 1, S)
+                    attn_mask = attn_mask.expand(-1, 1, self.num_heads, text_seq_len, -1)
+
+            atten_output = F.scaled_dot_product_attention(
+                q, k, v, 
+                attn_mask=attn_mask, 
+                dropout_p=dropout_p
+            )
+
+            atten_output = atten_output.view(batch_size, text_seq_len, num_joints, self.num_heads, self.head_dim)
+            atten_output = atten_output.view(batch_size, text_seq_len, num_joints, self.model_dim)
+            atten_output = torch.mean(atten_output, dim=2).unsqueeze(2)  # Average over joints to get [B, L, 1, D]
+
+            return self.output(atten_output)
     
 
 from models.utils import conv_init, bn_init

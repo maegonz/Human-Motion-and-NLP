@@ -162,6 +162,7 @@ class PositionalEmbedding(nn.Module):
             input tensor of shape (batch_size, seq_len, num_joints, model_dim)
         """
         seq_len = x.size(1)
+        x = x.unsqueeze(2) if x.ndim == 3 else x  # Add a dimension for num_joints if not present
         x = x + self.pe[:, :seq_len]
         return x
 
