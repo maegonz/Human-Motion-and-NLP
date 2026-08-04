@@ -85,20 +85,20 @@ class StTDiffusion(nn.Module):
         caption = self.caption_embedding(token_ids)  # [batch_size, seq_len, text_embed_dim]
 
         # Add timestep information
-        timesteps = self.timestep_embedding(t.unsqueeze(1).float())  # [batch_size, text_embed_dim]
+        t = self.timestep_embedding(t.unsqueeze(1).float())  # [batch_size, text_embed_dim]
 
         # Combine timestep and caption information
-        conditioning = timesteps + caption  # [batch_size, text_embed_dim]
+        c = t + caption  # [batch_size, text_embed_dim]
 
         # Reshape conditioning to spatial dimensions and concatenate with image
-        conditioning = conditioning.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # [batch_size, text_embed_dim, 1, 1]
-        conditioning = conditioning.repeat(1, 1, seq_len, n_joints, spatial_dim)  # [batch_size, text_embed_dim, seq_len, n_joints, spatial_dim]
+        c = c.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # [batch_size, text_embed_dim, 1, 1]
+        c = c.repeat(1, 1, seq_len, n_joints, spatial_dim)  # [batch_size, text_embed_dim, seq_len, n_joints, spatial_dim]
 
         # Predict noise
         for st_block in self.sttd:
-            motion_embed = st_block(motion_embed, conditioning)  # [batch_size, seq_len, n_joints, spatial_dim]
+            m = st_block(m, c)  # [batch_size, seq_len, n_joints, spatial_dim]
 
-        return motion_embed
+        return m
 
     def sample_timesteps(self, batch_size):
         """Sample random timesteps for training"""
