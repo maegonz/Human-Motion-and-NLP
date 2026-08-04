@@ -196,6 +196,22 @@ class PositionalEmbedding(nn.Module):
 
 class FeedForward(nn.Module):
     def __init__(self, input_dim: int, model_dim: int, ff_dim: int, dropout: float=0.2, swiglu: bool=False):
+        """
+        FeedForward network with optional SwiGLU activation.
+        
+        Parameters
+        ----------
+        input_dim : int
+            Input dimension of the feedforward network.
+        model_dim : int
+            Output dimension of the feedforward network.
+        ff_dim : int
+            Hidden dimension of the feedforward network.
+        dropout : float, optional
+            Dropout rate for regularization. Default is 0.2.
+        swiglu : bool, optional
+            If True, use SwiGLU activation; otherwise, use GELU. Default is False.
+        """
         super(FeedForward, self).__init__()
         self.swiglu = swiglu
 

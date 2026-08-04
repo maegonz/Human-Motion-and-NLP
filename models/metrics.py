@@ -5,67 +5,14 @@ from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from pycocoevalcap.cider.cider import Cider
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
+from typing import Optional
 
 nltk.download('omw-1.4', quiet=True)
 nltk.download('wordnet', quiet=True)
 
-# def bleu(reference: str, generated: str):
-#     """
-#     Compute BLEU score between a reference and a generated sentence.
-#     """
-#     refs = [reference.split()]
-#     gen = generated.split()
-#     smoothing = SmoothingFunction().method1
-#     bleu_score = sentence_bleu(refs, gen, smoothing_function=smoothing)
-#     return bleu_score
-
-
-# rouge_scorer_ = rouge_scorer.RougeScorer(
-#     ['rouge1', 'rouge2', 'rougeL'],
-#     use_stemmer=True
-# )
-# def rouge(reference: str, generated: str):
-#     """
-#     Compute ROUGE scores (ROUGE-1, ROUGE-2, ROUGE-L) between a reference and a generated sentence.
-#     """
-#     scores = rouge_scorer_.score(reference, generated)
-#     return {
-#         'rouge1': scores['rouge1'].fmeasure,
-#         'rouge2': scores['rouge2'].fmeasure,
-#         'rougeL': scores['rougeL'].fmeasure,
-#     }
-
-
-# def meteor(reference: str, generated: str):
-#     """
-#     Compute METEOR score between a reference and a generated sentence.
-#     """
-#     return meteor_score([reference.split()], generated.split())
-
-
-# cider_scorer = Cider()
-# def cider(reference: str, generated: str):
-#     """
-#     Compute CIDEr score between a reference and a generated sentence.
-#     """
-#     refs = {0: [reference]}
-#     gens = {0: [generated]}
-#     score, _ = cider_scorer.compute_score(refs, gens)
-#     return score
-
-
-# def scores(reference: str, generated: str):
-#     """
-#     Compute BLEU, ROUGE, METEOR, and CIDEr scores between a reference and a generated sentence.
-#     """
-#     scores = {}
-#     scores['bleu'] = bleu(reference, generated)
-#     scores['meteor'] = meteor(reference, generated)
-#     scores.update(rouge(reference, generated))
-#     scores['cider'] = cider(reference, generated)
-#     return scores
-
-from typing import Optional
+## ================================================================
+## ------------------------ Motion2Text Metrics -----------------
+## ================================================================
 
 def cross_entropy_loss(logits, target, pad_token_id: Optional[int]=-100):
     """
@@ -168,3 +115,27 @@ class Evaluator:
             'ROUGE-L': rougeL / n,
             'CIDEr': cider_score
         }
+
+## ================================================================
+## ------------------------ Text2Motion Metrics -----------------
+## ================================================================
+
+def mpjpe(predicted_motion: torch.Tensor, ground_truth_motion: torch.Tensor) -> float:
+    """
+    Compute the Mean Per Joint Position Error (MPJPE) between predicted and ground truth motion sequences.
+
+    Parameters
+    ----------
+    predicted_motion: torch.Tensor [batch, seq_len, n_joints, spatial_dim]
+        Predicted motion sequences
+    ground_truth_motion: torch.Tensor [batch, seq_len, n_joints, spatial_dim]
+        Ground truth motion sequences
+
+    Returns
+    -------
+    mpjpe_value: float
+        Mean Per Joint Position Error
+    """
+    error = torch.norm(predicted_motion - ground_truth_motion, dim=-1)  # [batch, seq_len, n_joints]
+    mpjpe_value = error.mean()  # Average over batch, seq_len, and joints
+    return mpjpe_value
